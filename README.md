@@ -38,50 +38,112 @@
 
 ## 🧯 트러블슈팅
 
-### 문제 1: 스톱워치 리셋 후에도 시간 누적됨
+네, 보내주신 실제 코드를 바탕으로 훨씬 더 상세하고 정확한 트러블 슈팅 리포트를 작성해 드릴게요.
 
-- **문제 상황**:
-스톱워치 reset()을 눌렀을 때 화면은 초기화되지만, start()하면 다시 이전 시간부터 시작됨.
+---
 
-- **원인 분석**:
-elapsedTime 변수를 0으로 초기화하지 않아서 이전 시간값이 계속 유지됨.
+### **문제 2: 스톱워치 리셋 후에도 이전 측정 시간이 누적되는 문제**
 
-- **해결 방법**:
-reset() 함수 내에서 elapsedTime = 0으로 초기화하고, 로컬스토리지의 누적 시간을 저장하는 함수를 초기화 전에 실행시켜 누적 기록은 보존함.
+#### **문제 상황**
+1.  **동작:** 스톱워치 '시작' 버튼을 눌러 시간을 측정하고, '일시정지'를 누른 뒤, '리셋' 버튼을 클릭
+2.  **화면 반응:** 화면의 타이머(`stopwatch-display`)는 `00:00:00`으로 정상적으로 초기화
+3.  **버그 발생:** 이 상태에서 다시 '시작' 버튼을 누르자, 타이머가 `00:00:00`부터 시작하지 않고 리셋하기 직전의 시간부터 이어서 측정되는 문제가 발생. 예를 들어 15분에서 리셋했다면, 다시 시작 시 15분 1초부터 시간이 흘러함.
+
+#### **원인 분석**
+-   **핵심 원인:** `resetStopwatch` 함수는 `clearInterval`로 타이머의 반복 동작을 멈추고, `textContent`를 수정해 화면 표시만 초기화. 하지만 스톱워치의 실제 경과 시간을 밀리초(ms) 단위로 저장하는 핵심 상태 변수인 **`elapsedTime`을 0으로 초기화하는 로직이 누락**되어 있었음.
+-   **코드 동작 흐름:**
+    1.  `startStopwatch` 함수는 `setInterval`을 통해 10ms마다 `elapsedTime` 변수에 시간을 누적
+    2.  `pauseStopwatch` 함수는 `setInterval`을 멈추지만, `elapsedTime` 값은 그대로 유지
+    3.  이 상태에서 `resetStopwatch`가 호출되었을 때, (버그가 있던 코드에서는) `elapsedTime`이 그대로 남아있었음.
+    4.  사용자가 다시 `startStopwatch`를 호출하면, `setInterval`은 0이 아닌, 이전에 누적된 `elapsedTime` 값에 계속해서 10ms를 더하기 시작. 이것이 버그의 직접적인 원인이었음.
+
+-   **문제 원인 코드 (수정 전)**
+    ```javascript
+    function resetStopwatch(e) {
+        // 타이머 반복 중지
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+
+        // 누적 시간 저장 (이 기능은 정상)
+        saveTime(elapsedTime);
+
+        // elapsedTime = 0;  // <--- 이 핵심 초기화 코드가 누락된 상태
+
+        // 화면 표시만 초기화
+        $stopWatchDisplay.textContent = '00:00:00';
+        $pauseBtn.textContent = '일시정지';
+        changeState(false);
+    }
+    ```
+
+#### **해결 방법**
+-   **UI와 데이터 상태의 동기화:** `resetStopwatch` 함수 내에서 화면 표시(`textContent`)를 초기화할 뿐만 아니라, 실제 데이터인 `elapsedTime` 변수도 `0`으로 명시적으로 초기화하여 UI와 데이터 상태를 일치시킴.
+-   **기록 보존:** 사용자의 총 공부 시간 기록을 위해, `elapsedTime`을 `0`으로 초기화하기 **직전에** `saveTime(elapsedTime)` 함수를 호출했다. 이 순서를 통해 현재 세션의 기록은 안전하게 로컬 스토리지에 누적시키고, 그 후에 현재 타이머 상태만 깨끗하게 초기화할 수 있었음음.
+
+-   **수정 후 최종 코드 (`stopwatch.js`)**
+    ```javascript
+    function resetStopwatch(e) {
+        // 1. 실행 중인 인터벌을 정지시켜 더 이상 시간이 누적되지 않게 함
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+
+        // 2. 현재까지 누적된 elapsedTime을 로컬 스토리지에 저장
+        saveTime(elapsedTime);
+
+        // 3. [핵심 수정] 실제 경과 시간 변수를 0으로 초기화
+        elapsedTime = 0;
+
+        // 4. 휴식 시간 모달 관련 상태 변수들도 초기화
+        hasShownBreak = false;
+        breakTargetTime = null;
+
+        // 5. 화면 표시와 버튼 상태를 모두 초기 상태로 되돌림
+        $stopWatchDisplay.textContent = '00:00:00';
+        $pauseBtn.textContent = '일시정지';
+        changeState(false); // 버튼 활성화/비활성화 상태 초기화
+    }
+    ```
+-   위와 같이 수정함으로써 리셋 버튼은 **화면 표시, 내부 데이터, 관련 상태 변수들을 모두 일관성 있게 초기화**하는 본연의 기능을 완벽하게 수행하게 되었음.
 
 
-### 문제 2: 기능별 모달(Modal) UI의 `z-index` 충돌
 
-- **상황**:
-  
-  팀원들이 각자 맡은 기능(스톱워치, TodoList 등)에 필요한 모달을 개별적으로 구현함. 이후 각자의 브랜치를 `develop`에 병합했을 때,\
-  **여러 모달이 동시에 열리면서 UI가 겹치거나 특정 모달이 다른 요소에 가려져 보이지 않는 문제**가 발생함.
+---
 
-- **원인 분석**:
-  
-  프로젝트 초기에 공통 UI 규칙을 세우지 않고 각자 모달을 개발하다 보니, `z-index` 속성값이 중구난방으로 설정됨. 이로 인해 브라우저가 어떤 모달을 최상단에 렌더링해야 할지 제대로 판단하지 못했음.
 
-- **해결 방법**:
-  
-  팀장으로서 **모달의 우선순위에 대한 명확한 기준을 세워 팀에 공유**함. 모든 모달의 `z-index` 값을 전역적으로 관리하는 규칙을 정하고, 이를 각 기능의 CSS 파일에 반영하도록 요청함.\
-  이후 UI가 겹칠 수 있는 모든 경우의 수를 팀원들과 함께 테스트하며 문제를 해결함.
 
-### 문제 3: `develop` 브랜치 병합 시 반복적인 HTML 충돌
+### **문제 2: API 호출 결과가 명언 모달에 정상적으로 반영되지 않는 문제**
 
-- **상황**:
-  
-  프로젝트 초기, 각자 기능 개발에 집중하기 위해 기본 HTML 구조만 잡고 빠르게 `develop` 브랜치에 병합함.\
-  이후 팀원들이 각자 CSS 및 JS 작업을 진행하며 필요한 HTML 구조를 수정했고, 이로 인해 **PR을 병합할 때마다 `index.html` 파일에서 계속 충돌(Conflict)이 발생**함.
+#### **문제 상황**
+1.  **API 호출 실패 테스트:** `catch` 블록의 에러 핸들링을 확인하기 위해 의도적으로 API URL을 틀리게 변경 후 '오늘의 명언' 버튼을 클릭
+2.  **예상 결과:** 모달 창에 `textEl.textContent = '명언을 불러오지 못했어요 🧐'`가 실행되어 에러 메시지가 표시되어야함.
+3.  **실제 결과:** 에러 메시지는 나타나지 않고, HTML에 하드코딩되어 있던 초기 텍스트가 그대로 보임.
+4.  **API 정상화 후 테스트:** API URL을 다시 정상으로 수정한 후 실행했지만, 여전히 API에서 받아온 명언이 아닌 초기 텍스트만 표시되었음.
 
-- **원인 분석**:
-  
-  초기 HTML 구조 설계가 미흡한 상태에서 병렬적으로 개발을 진행한 것이 가장 큰 원인이었음.\
-  각자 자신의 기능에 맞춰 구조를 변경하다 보니, 메인 브랜치의 코드와 계속 충돌하게 됨.
+#### **원인 분석**
+-   `loadQuote` 함수 내에서 명언을 표시할 DOM 요소를 선택할 때 `document.querySelector('.quote-text')`와 같이 클래스 선택자만을 사용했음.
+-   `document.querySelector()`는 문서 전체에서 **가장 먼저 발견되는 요소 하나만**을 반환함.
+-   HTML 구조를 확인한 결과, '오늘의 명언' 모달(`id="quoteModal"`)보다 **'휴식 시간' 알림 모달(`id="break-modal"`)이 먼저 선언**되어 있었음.
+-   두 모달 모두 동일한 클래스명(`class="quote-text"`)을 가진 `<p>` 태그를 포함하고 있어, 자바스크립트는 항상 의도치 않은 '휴식 시간' 모달 내부의 요소를 선택하고 있었음.
+-   결과적으로 API 호출 성공/실패와 관계없이 모든 텍스트 업데이트가 **사용자에게 보이지 않는 '휴식 시간' 모달에서만 일어나고 있었던 것**이 근본적인 원인
 
-- **해결 방법**:
-  
-GitHub PR 관리를 담당하고 있었기에, **PR을 생성할 때 변경된 파일과 충돌 예상 지점을 설명하는 내용을 반드시 포함**하도록 규칙을 정함.\
-예를 들어, "stopwatch 기능 추가로 `main-container` 태그 구조를 변경했으니, 병합 시 제 브랜치 기준으로 맞춰주세요"와 같이 명시적인 코멘트를 통해 충돌 해결 가이드를 제공함. 덕분에 충돌이 발생해도 팀원들이 혼란 없이 빠르게 문제를 해결할 수 있었음.
+#### **해결 방법**
+-   DOM 요소를 선택하는 범위를 '오늘의 명언' 모달(`id="quoteModal"`) 내부로 한정하여, 다른 모달의 요소와 혼동되지 않도록 선택자를 구체적으로 수정
+
+-   **수정 전 코드 (`quoteAPI.js`)**
+    ```javascript
+    const nameEl = document.querySelector('.quote-name');
+    const profileEl = document.querySelector('.quote-profile');
+    const textEl = document.querySelector('.quote-text');
+    ```
+
+-   **수정 후 코드 (`quoteAPI.js`)**
+    ```javascript
+    // #quoteModal을 앞에 추가하여 선택 범위를 명확히 함
+    const nameEl = document.querySelector('#quoteModal .quote-name');
+    const profileEl = document.querySelector('#quoteModal .quote-profile');
+    const textEl = document.querySelector('#quoteModal .quote-text');
+    ```
+-   위와 같이 수정함으로써 `loadQuote` 함수는 명확하게 '오늘의 명언' 모달 내의 요소들만 제어하게 되어 문제가 해결
 
 ---
 
