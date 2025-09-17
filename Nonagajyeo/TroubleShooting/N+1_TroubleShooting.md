@@ -21,13 +21,7 @@
 
     <!-- end list -->
 
-    ```
-    -- 쿼리 로그 예시
-    Hibernate: select m1_0.meeting_id, ... from meetings m1_0 -- (1) 모임 전체 조회 쿼리 (1번)
-    Hibernate: select m1_0.mart_id, ... from marts m1_0 where m1_0.mart_id=? -- (2) 첫 번째 모임의 마트 정보 조회
-    Hibernate: select m1_0.mart_id, ... from marts m1_0 where m1_0.mart_id=? -- (3) 두 번째 모임의 마트 정보 조회
-    ... (N번 반복) ...
-    ```
+ 
 
 #### **해결 방법**
 
@@ -67,7 +61,7 @@
         if (keyword != null && !keyword.isBlank()) {
             meetings = meetingsRepository.findByKeywordAndRecruiting(keyword);
         } else {
-            // ✅ N+1 문제가 해결된 메서드 호출
+            //  N+1 문제가 해결된 메서드 호출
             meetings = meetingsRepository.findAllWithMartByOrderByCreatedAtDesc();
         }
 
